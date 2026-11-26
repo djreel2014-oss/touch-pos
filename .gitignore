@@ -1,2 +1,3 @@
+dist/
+src/Data/
 *.exe
-Setup-TouchPOS.cmd

@@ -9,6 +9,7 @@ if (-not $isAdmin) {
 }
 $r = [System.Windows.Forms.MessageBox]::Show('Remove Touch POS from this computer?', 'Touch POS Uninstall', 'YesNo', 'Question')
 if ($r -ne 'Yes') { exit }
+try { $hk = [IO.File]::ReadAllText((Join-Path $env:ProgramData 'TouchPOS\helper.key')).Trim(); (New-Object Net.WebClient).DownloadString('http://127.0.0.1:47615/quit?k=' + $hk) | Out-Null; Start-Sleep -Milliseconds 500 } catch { }
 $d = [System.Windows.Forms.MessageBox]::Show('Also delete ALL saved sales, customers, products and settings (the shared data folder)?' + [Environment]::NewLine + 'Choose No to keep them for a future install.', 'Touch POS Uninstall', 'YesNo', 'Warning')
 foreach ($f in @('Desktop', 'CommonDesktopDirectory', 'Programs', 'CommonPrograms')) {
   $p = [Environment]::GetFolderPath($f)

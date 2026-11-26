@@ -7,6 +7,7 @@
 <script src="lib/jszip.min.js"></script>
 <script src="lib/pdf-lib.min.js"></script>
 <script src="lib/desktop-shim.js"></script>
+<script src="lib/db-store.js"></script>
 <style>
 :root{--bg:#f3f4f7;--card:#fff;--ink:#1b1f2a;--mute:#697086;--line:#dfe2ea;--acc:#2a5bd7;--accink:#fff;--ok:#1d8a4e;--warn:#c47a00;--bad:#c9302c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14161c;--card:#1e222b;--ink:#eceff6;--mute:#9aa2b8;--line:#2f3543;--acc:#6b93ff;--accink:#0d1220;--ok:#43c47c;--warn:#f0a832;--bad:#ff6b66;color-scheme:dark}}
@@ -668,18 +669,52 @@ function limitWarn(p){modal('<h3 style="margin-top:0;color:var(--warn)">Sales li
 function ovrList(){return Object.keys(ovr).map(function(id){var p=prod(id);return p?p.name:id})}
 /* import and export */
 function csvEsc(v){return'"'+String(v==null?'':v).replace(/"/g,'""')+'"'}
-function csvParse(t){var rows=[],r=[],f='',q=false,i,c;t=t.replace(/^\uFEFF/,'');for(i=0;i<t.length;i++){c=t[i];if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}else if(c==='"')q=true;else if(c===','){r.push(f);f=''}else if(c==='\n'||c==='\r'){if(c==='\r'&&t[i+1]==='\n')i++;r.push(f);f='';rows.push(r);r=[]}else f+=c}if(f!==''||r.length){r.push(f);rows.push(r)}return rows.filter(function(x){return x.some(function(y){return y!==''})})}
+function csvParse(t,d){d=d||',';var rows=[],r=[],f='',q=false,i,c;t=t.replace(/^\uFEFF/,'');for(i=0;i<t.length;i++){c=t[i];if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}else if(c==='"')q=true;else if(c===d){r.push(f);f=''}else if(c==='\n'||c==='\r'){if(c==='\r'&&t[i+1]==='\n')i++;r.push(f);f='';rows.push(r);r=[]}else f+=c}if(f!==''||r.length){r.push(f);rows.push(r)}return rows.filter(function(x){return x.some(function(y){return y!==''})})}
 async function dlFile(blob,fn){var ok=await saveBlob(blob,fn);if(!ok){var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fn;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},4000);toast('Saved')}}
 function dump(){var st=JSON.parse(JSON.stringify(S.set));if(st.gw)st.gw.key='';return{app:'touchpos',version:2,exported:Date.now(),products:S.products,customers:S.customers,sales:S.sales,set:st,pm:S.pm,dv:S.dv,staff:S.staff}}
 function rowsCsv(rows){return rows.map(function(r){return r.map(csvEsc).join(',')}).join(String.fromCharCode(13,10))}
-async function readImport(file){var n=file.name.toLowerCase(),out={products:[],customers:[],sales:[],extra:null},d,i;
+/* customer lists from other systems: column names are matched loosely, dates become yyyy-mm-dd */
+function impKey(k){return String(k==null?'':k).replace(/^﻿/,'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'')}
+async function impText(file){var b=new Uint8Array(await file.arrayBuffer());
+  if(b[0]===0xFF&&b[1]===0xFE)return new TextDecoder('utf-16le').decode(b.subarray(2));
+  if(b[0]===0xFE&&b[1]===0xFF)return new TextDecoder('utf-16be').decode(b.subarray(2));
+  try{return new TextDecoder('utf-8',{fatal:true}).decode(b).replace(/^﻿/,'')}catch(e){return new TextDecoder('windows-1252').decode(b)}}
+function impDelim(t){var line=t.split(/\r?\n/).find(function(l){return l.trim()})||'',best=',',n=-1;[',',';','\t','|'].forEach(function(d){var c=0,q=false,i;for(i=0;i<line.length;i++){if(line[i]==='"')q=!q;else if(!q&&line[i]===d)c++}if(c>n){n=c;best=d}});return best}
+function impDate(v){v=String(v||'').trim();var m;if(!v)return'';if((m=v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))return m[1]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[3]).slice(-2);
+  if((m=v.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/))){var d=+m[1],mo=+m[2],y=+m[3],t;if(y<100)y+=2000;if(mo>12&&d<=12){t=d;d=mo;mo=t}if(mo<1||mo>12||d<1||d>31)return'';return y+'-'+('0'+mo).slice(-2)+'-'+('0'+d).slice(-2)}return''}
+var IMPA={name:['name','full_name','fullname','customer_name','member_name','display_name','customer'],first:['first_name','firstname','forename','forenames','given_name','first'],last:['last_name','lastname','surname','family_name','last'],nick:['nickname','nick_name','known_as','preferred_name'],
+  email:['email','e_mail','email_address','mail'],phone:['phone','telephone','tel','phone_number','home_phone','landline'],mobile:['mobile','mobile_phone','mobile_number','cell','cell_phone'],address:['address','postal_address','home_address'],
+  status:['status','membership_status','member_status','membership','membership_type','member_type'],notes:['notes','note','comments','comment','remarks'],
+  photo:['photo_url','photourl','photo','picture','picture_url','image','image_url','avatar','avatar_url','profile_picture','profile_photo','photo_link','picture_link','image_link'],
+  ext:['hello_club_id','member_id','member_number','membership_number','membership_no','member_no','club_id','external_id','customer_number','account_number'],
+  sup:['supervision','supervision_status'],certBy:['certified_by','shoot_unaccompanied','unaccompanied_signed_by','cleared_by'],certDate:['certified_date','probationary_safety','safety_date','cleared_date','safety_course'],
+  r8:['8_ring_qualified','eight_ring_qualified','8_ring'],r8By:['8_ring_signed_by','signed_off_by','8_ring_signed_off_by'],r8Date:['8_ring_date','8_ring_group_signed_off','8_ring_signed_off','eight_ring_date'],left:['left','left_date','date_left']};
+function impCustomer(o){var g=function(a){for(var i=0;i<IMPA[a].length;i++){var v=o[IMPA[a][i]];if(v!=null&&String(v).trim()!=='')return String(v).trim()}return''};
+  var name=g('name')||[g('first'),g('last')].filter(Boolean).join(' ')||g('nick');if(!name)return null;
+  var id=String(o.id==null?'':o.id).trim(),ext=g('ext');if(id&&!/^POS-[A-Z0-9]{6}$/i.test(id)){if(!ext)ext=id;id=''}
+  var cb=g('certBy'),cd=g('certDate'),t;if(cb&&impDate(cb)&&!impDate(cd)){t=cb;cb=cd;cd=t}
+  var rb=g('r8By'),rd=g('r8Date');if(rb&&impDate(rb)&&!impDate(rd)){t=rb;rb=rd;rd=t}
+  var sp=g('sup'),status=g('status'),sup=/require/i.test(sp)?'req':/no supervision|cleared|unaccompanied/i.test(sp)?'cleared':(cb||impDate(cd))?'cleared':/probation/i.test(status)?'req':'';
+  var c={id:id.toUpperCase(),name:name,email:g('email'),phone:g('phone')||g('mobile'),notes:g('notes'),sup:sup,certBy:sup==='cleared'?cb:'',certDate:sup==='cleared'?impDate(cd):'',ring8:/^(y|yes|true|1)$/i.test(g('r8'))||!!(rb||impDate(rd)),ring8By:rb,ring8Date:impDate(rd)};
+  var nk=g('nick');if(ext)c.extId=ext;if(nk&&nk!==name&&nk!==g('first'))c.nick=nk;if(status)c.status=status;if(g('mobile')&&g('phone'))c.mobile=g('mobile');if(g('address'))c.address=g('address');if(g('left'))c.left=impDate(g('left'))||g('left');
+  var extra=[status?'Status: '+status:'',c.nick?'Known as: '+c.nick:'',c.mobile?'Mobile: '+c.mobile:'',c.address?'Address: '+c.address:'',c.left?'Left: '+c.left:''].filter(Boolean).join('. ');
+  if(extra)c.notes=c.notes?c.notes+' ('+extra+')':extra;
+  var ph=g('photo');if(/^(https?:|data:image\/)/i.test(ph))c.photo_url=ph;return normPhoto(c)}
+function impNorm(o){var r={};Object.keys(o||{}).forEach(function(k){var v=o[k];if(v&&typeof v==='object'&&!Array.isArray(v))Object.keys(v).forEach(function(s){r[impKey(k+'_'+s)]=v[s]});else r[impKey(k)]=v});return r}
+function impNative(o){return o&&typeof o.name==='string'&&(/^POS-/i.test(o.id||'')||('sup' in o)||('ring8' in o)||('photoUrl' in o))}
+function impList(d){if(Array.isArray(d))return d;if(!d||typeof d!=='object')return[];var ks=['customers','members','data','records','items','results','rows','people','contacts','users'],i;for(i=0;i<ks.length;i++)if(Array.isArray(d[ks[i]]))return d[ks[i]];return Object.keys(d).map(function(k){return d[k]}).find(function(v){return Array.isArray(v)&&v.length&&v[0]&&typeof v[0]==='object'})||[]}
+function impCustomers(list,cols,native){var out=[];list.forEach(function(o){if(!o||typeof o!=='object')return;var c=native&&impNative(o)?o:impCustomer(impNorm(o));if(c)out.push(c)});
+  if(!out.length)throw new Error('No customer names found. The file needs a name column, or first name and last name columns.'+(cols&&cols.length?' Columns found: '+cols.slice(0,20).join(', '):''));return out}
+async function readImport(file){var n=file.name.toLowerCase(),out={products:[],customers:[],sales:[],extra:null},d,i,tx;
   if(n.slice(-4)==='.zip'){var z=await JSZip.loadAsync(file),jf=z.file('customers.json');if(!jf)throw new Error('This ZIP has no customers.json');d=JSON.parse(await jf.async('string'));for(i=0;i<d.length;i++){var c=d[i];if(c.photoFile&&z.file(c.photoFile))c.photo='data:image/jpeg;base64,'+await z.file(c.photoFile).async('base64');delete c.photoFile;out.customers.push(c)}}
-  else if(n.slice(-5)==='.json'){d=JSON.parse(await file.text());if(Array.isArray(d)){if(d[0]&&('price' in d[0]))out.products=d;else out.customers=d}else{out.products=d.products||[];out.customers=d.customers||[];out.sales=d.sales||[];if(d.staff||d.set||d.pm)out.extra={set:d.set,pm:d.pm,dv:d.dv,staff:d.staff}}}
-  else if(n.slice(-4)==='.csv'){var rows=csvParse(await file.text()),h=rows.shift().map(function(x){return x.trim().toLowerCase()});
+  else if(n.slice(-5)==='.json'){tx=await impText(file);try{d=JSON.parse(tx)}catch(e){throw new Error('This file is not valid JSON ('+e.message+')')}
+    if(d&&!Array.isArray(d)&&(d.app==='touchpos'||Array.isArray(d.products)||Array.isArray(d.sales))){out.products=d.products||[];out.customers=d.customers||[];out.sales=d.sales||[];if(d.staff||d.set||d.pm)out.extra={set:d.set,pm:d.pm,dv:d.dv,staff:d.staff}}
+    else{var L=impList(d);if(L[0]&&('price' in L[0]))out.products=L;else out.customers=impCustomers(L,L[0]&&typeof L[0]==='object'?Object.keys(L[0]):[],true)}}
+  else if(/\.(csv|tsv|txt)$/.test(n)){tx=await impText(file);var rows=csvParse(tx,impDelim(tx));if(!rows.length)throw new Error('The file is empty');var raw=rows.shift(),h=raw.map(impKey);
     var g=function(r,k){var j=h.indexOf(k);return j<0?'':(r[j]||'').trim()};
     if(h.indexOf('price')>-1)rows.forEach(function(r){out.products.push({id:g(r,'id'),name:g(r,'name'),desc:g(r,'description')||g(r,'desc'),cat:g(r,'category')||g(r,'cat'),price:+g(r,'price')||0,stock:Math.round(+g(r,'stock'))||0,reorder:Math.round(+g(r,'reorder'))||0,units:Math.max(1,Math.round(+g(r,'units'))||1),maxTx:Math.round(+g(r,'max_per_sale'))||0,src:g(r,'source')})});
-    else rows.forEach(function(r){var sp=g(r,'supervision');out.customers.push(normPhoto({photo_url:g(r,'photo_url')||g(r,'photourl')||g(r,'picture')||g(r,'picture_url')||g(r,'image')||g(r,'image_url')||g(r,'photo'),id:g(r,'id'),name:g(r,'name'),email:g(r,'email'),phone:g(r,'phone'),notes:g(r,'notes'),sup:/require/i.test(sp)?'req':/no supervision|cleared/i.test(sp)?'cleared':'',certBy:g(r,'certified_by'),certDate:g(r,'certified_date'),ring8:/^y/i.test(g(r,'8_ring_qualified')),ring8By:g(r,'8_ring_signed_by'),ring8Date:g(r,'8_ring_date')}))})}
-  else throw new Error('Choose a .json, .zip or .csv file');
+    else out.customers=impCustomers(rows.map(function(r){var o={};h.forEach(function(k,j){if(k&&!(k in o))o[k]=r[j]});return o}),raw.map(function(x){return x.trim()}).filter(Boolean),false)}
+  else throw new Error('Choose a .csv, .json or .zip file');
   out.customers.forEach(function(c){if(c)normPhoto(c)});
   out.products=out.products.filter(function(x){return x&&x.name});out.customers=out.customers.filter(function(x){return x&&x.name});
   if(!out.products.length&&!out.customers.length&&!out.sales.length&&!out.extra)throw new Error('No products, customers or sales found in that file');
@@ -688,7 +723,7 @@ function mergeBy(cur,inc,idf,match){var a=0,u=0;inc.forEach(function(x){var f=x.
 function applyImport(D,mode,withSet){var rep=[];function pid(){return'P'+Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
   if(mode==='replace'){if(D.products.length){S.products=D.products;rep.push(D.products.length+' products replaced')}if(D.customers.length){S.customers=D.customers;rep.push(D.customers.length+' customers replaced')}if(D.sales.length){S.sales=D.sales;rep.push(D.sales.length+' sales replaced')}}
   else{if(D.products.length)rep.push('products '+mergeBy(S.products,D.products,pid,function(y,x){return y.name.toLowerCase()===x.name.toLowerCase()}));
-    if(D.customers.length)rep.push('customers '+mergeBy(S.customers,D.customers,uid,function(y,x){return x.email&&y.email&&y.email.toLowerCase()===x.email.toLowerCase()}));
+    if(D.customers.length)rep.push('customers '+mergeBy(S.customers,D.customers,uid,function(y,x){return (x.extId&&y.extId&&String(y.extId)===String(x.extId))||(x.email&&y.email&&y.email.toLowerCase()===x.email.toLowerCase())}));
     if(D.sales.length){var have={};S.sales.forEach(function(s){have[s.id]=1});var add=D.sales.filter(function(s){return s&&s.id&&!have[s.id]});S.sales=S.sales.concat(add).sort(function(a,b){return a.ts-b.ts});rep.push(add.length+' sales added')}}
   if(withSet&&D.extra){var e=D.extra,keep=(S.set.gw||{}).key;if(e.set){S.set=Object.assign({},S.set,e.set);if(S.set.gw&&!S.set.gw.key&&keep)S.set.gw.key=keep}if(e.pm)S.pm=e.pm;if(e.dv)S.dv=e.dv;if(e.staff&&e.staff.length)S.staff=e.staff;rep.push('settings and staff')}
   S.products.forEach(function(p){if(!p.id)p.id=pid();p.price=+p.price||0;p.stock=Math.round(+p.stock)||0;p.reorder=Math.round(+p.reorder)||0});
@@ -696,10 +731,10 @@ function applyImport(D,mode,withSet){var rep=[];function pid(){return'P'+Date.no
 function importModal(D,fn){var n=D.products.length+' products, '+D.customers.length+' customers, '+D.sales.length+' sales'+(D.extra?', plus settings and staff':'');
   modal('<h3 style="margin-top:0">Import '+esc(fn)+'</h3><p>Found: <b>'+n+'</b>.</p><label class="ck"><input type="radio" name="im" value="merge" checked> Merge: add new records and update matching ones</label><label class="ck"><input type="radio" name="im" value="replace"> Replace: overwrite those sections of the database</label>'+(D.extra?'<label class="ck"><input type="checkbox" id="ims"> Also restore settings, payment links, devices and staff (replaces the current staff list)</label>':'')+'<div class="row" style="margin-top:12px"><button class="btn pri" id="ok">Import</button><button class="btn" id="cl">Cancel</button></div>');
   $('cl').onclick=close;$('ok').onclick=function(){var mode=document.querySelector('[name=im]:checked').value,ws=!!($('ims')&&$('ims').checked);
-    function go2(){var r=applyImport(D,mode,ws);close();render();toast('Imported: '+r);var np=S.customers.filter(function(c){return c.photoUrl&&!c.photo}).length;if(np)ask(np+' customers have a picture web address. Download their pictures now and keep a copy in the database?','Download',function(){fetchPics(false)})}
+    function go2(){var r=applyImport(D,mode,ws);close();render();toast('Imported: '+r);var np=S.customers.filter(function(c){return c.photoUrl&&!c.photo}).length;if(np)fetchPics(false)}
     if(mode==='replace'){close();ask('Replace the current data with the imported data? Make a backup first if unsure.','Replace',go2)}else go2()}}
 function rData(){
-  $('main').innerHTML='<div class="view"><div class="pane"><div class="box" style="max-width:720px"><h3 style="margin-top:0">Export and backup</h3><div class="row"><button class="btn pri" id="x1">Full backup (JSON)</button><button class="btn" id="x2">Customers with photos (ZIP)</button><button class="btn" id="x3">Products (CSV)</button><button class="btn" id="x4">Sales (CSV)</button></div><p style="color:var(--mute);font-size:13px">The full backup holds products, customers with photos, sales, settings and staff. Wallet private keys are never included.</p>'+(location.protocol==='file:'?'<p style="font-size:14px;color:var(--mute)">Exports, receipts and automatic backups are saved to <b>C:\\ProgramData\\TouchPOS\\Files</b>.</p>':'')+'</div><div class="box" style="max-width:720px"><h3 style="margin-top:0">Import a database</h3><p style="color:var(--mute);font-size:13px;margin-top:0">Accepts a full backup (.json), a customer export (.zip with photos), or a products or customers list (.csv or .json). You choose whether to merge or replace before anything changes.</p><label class="btn pri" style="display:inline-flex;align-items:center;cursor:pointer">Choose file\u2026<input type="file" id="imf" accept=".json,.zip,.csv" style="display:none"></label></div>'+picBox()+dangerBox()+'</div></div>';
+  $('main').innerHTML='<div class="view"><div class="pane"><div class="box" style="max-width:720px"><h3 style="margin-top:0">Export and backup</h3><div class="row"><button class="btn pri" id="x1">Full backup (JSON)</button><button class="btn" id="x2">Customers with photos (ZIP)</button><button class="btn" id="x3">Products (CSV)</button><button class="btn" id="x4">Sales (CSV)</button></div><p style="color:var(--mute);font-size:13px">The full backup holds products, customers with photos, sales, settings and staff. Wallet private keys are never included.</p>'+(location.protocol==='file:'?'<p style="font-size:14px;color:var(--mute)">Exports, receipts and automatic backups are saved to <b>C:\\ProgramData\\TouchPOS\\Files</b>.</p>':'')+'</div><div class="box" style="max-width:720px"><h3 style="margin-top:0">Import a database</h3><p style="color:var(--mute);font-size:13px;margin-top:0">Accepts a full backup (.json), a customer export (.zip with photos), or a products or customers list (.csv or .json). You choose whether to merge or replace before anything changes.</p><label class="btn pri" style="display:inline-flex;align-items:center;cursor:pointer">Choose file\u2026<input type="file" id="imf" accept=".csv,.json,.zip,.tsv,.txt" style="display:none"></label></div>'+picBox()+dangerBox()+'</div></div>';
   $('x1').onclick=function(){dlFile(new Blob([JSON.stringify(dump())],{type:'application/json'}),'touchpos-backup-'+iso()+'.json')};
   $('x2').onclick=exportCust;
   $('x3').onclick=function(){var r=[['id','name','description','category','price','stock','reorder','units','source','max_per_sale','deleted']];S.products.forEach(function(p){r.push([p.id,p.name,p.desc||'',p.cat||'',p.price,p.stock,p.reorder,p.units||1,p.src||'',p.maxTx||0,p.deleted?'yes':''])});dlFile(new Blob([String.fromCharCode(65279)+rowsCsv(r)],{type:'text/csv'}),'products-'+iso()+'.csv')};
@@ -707,7 +742,8 @@ function rData(){
   
   wirePics();wireDanger();
   $('imf').onchange=function(ev){var f=ev.target.files[0];if(!f)return;readImport(f).then(function(D){importModal(D,f.name)}).catch(function(e){toast('Import failed: '+e.message)});ev.target.value=''}}
-var APPVER='1.3.0';
+var APPVER='1.4.1';
+function dbInfo(){if(!window.posStore)return'<p style="color:var(--bad);font-size:13px">The customer database is not connected, so data is kept in browser storage, which has little space, and pictures may be blocked. Start Touch POS from its shortcut.</p>';var s=posStore.status();return s?'<p style="color:var(--mute);font-size:13px">Customer database: '+s.customers+' customers, '+s.photos+' with a stored picture. File: '+esc(s.file)+'</p>':''}
 /* kiosk: full screen that comes back until an administrator turns it off */
 function kWant(){return !!(S.set.kioskStart||location.hash==='#kiosk')}
 function kCheck(){var o=$('kov');if(!o)return;var need=kWant()&&!document.fullscreenElement&&!adminUser&&!!user;if(need)o.style.top=(document.querySelector('header').offsetHeight)+'px';o.style.display=need?'flex':'none'}
@@ -726,8 +762,10 @@ function normPhoto(c){var u='';['photo_url','photoUrl','photourl','picture','pic
   if(typeof c.photo==='string'&&/^https?:/i.test(c.photo)){c.photoUrl=c.photo;c.photo=''}
   if(c.photo===undefined)c.photo='';return c}
 function shrink(src,sz){return new Promise(function(res,rej){var im=new Image();im.onload=function(){var cv=document.createElement('canvas');cv.width=cv.height=sz;var k=Math.min(im.width,im.height);cv.getContext('2d').drawImage(im,(im.width-k)/2,(im.height-k)/2,k,k,0,0,sz,sz);try{res(cv.toDataURL('image/jpeg',.8))}catch(e){rej(new Error('The picture could not be copied (blocked)'))}};im.onerror=function(){rej(new Error('Not a readable picture'))};im.src=src})}
-async function picFromUrl(u){if(/^data:image\//i.test(u))return shrink(u,400);var r;try{r=await fetch(u,{mode:'cors',credentials:'omit'})}catch(e){throw new Error('Blocked: that site does not allow its pictures to be copied, or there is no internet')}
-  if(!r.ok)throw new Error('The site answered '+r.status);var bl=await r.blob(),ou=URL.createObjectURL(bl);try{return await shrink(ou,400)}finally{URL.revokeObjectURL(ou)}}
+async function picFromUrl(u){if(/^data:image\//i.test(u))return shrink(u,400);var r;
+  if(window.posStore){try{r=await fetch(posStore.pictureUrl(u))}catch(e){throw new Error('The Touch POS helper is not running. Close Touch POS and start it again from its shortcut')}if(!r.ok)throw new Error(await r.text())}
+  else{try{r=await fetch(u,{mode:'cors',credentials:'omit'})}catch(e){throw new Error('Blocked: that site does not allow its pictures to be copied, or there is no internet')}
+  if(!r.ok)throw new Error('The site answered '+r.status)}var bl=await r.blob(),ou=URL.createObjectURL(bl);try{return await shrink(ou,400)}finally{URL.revokeObjectURL(ou)}}
 async function fetchPics(force){var L=S.customers.filter(function(c){return c.photoUrl&&(force||!c.photo)});if(!L.length){toast('No pictures to download');return}
   var stop=false,ok=0,bad=[],i;modal('<h3 style="margin-top:0">Downloading pictures</h3><div id="pgt" style="margin:10px 0"></div><div class="row"><button class="btn" id="pgx">Stop</button></div>');$('pgx').onclick=function(){stop=true};
   for(i=0;i<L.length&&!stop;i++){var c=L[i],e=$('pgt');if(e)e.textContent=(i+1)+' of '+L.length+': '+c.name;
@@ -739,7 +777,7 @@ async function folderPics(files){var ok=0,miss=[],i;function nk(s){return String
     if(!c){miss.push(f.name);continue}try{var ou=URL.createObjectURL(f);try{c.photo=await shrink(ou,400)}finally{URL.revokeObjectURL(ou)}ok++}catch(x){miss.push(f.name)}}
   save();render();modal('<h3 style="margin-top:0">Folder import finished</h3><p>'+ok+' pictures saved'+(miss.length?'; '+miss.length+' files did not match a customer ('+esc(miss.slice(0,8).join(', '))+(miss.length>8?'...':'')+'). Name each picture after the customer id, email or full name.':'.')+'</p><button class="btn pri" id="cl">Close</button>');$('cl').onclick=close}
 function picBox(){var t=S.customers.filter(function(c){return c.photoUrl}).length,n=S.customers.filter(function(c){return c.photoUrl&&!c.photo}).length;
-  return'<div class="box" style="max-width:720px"><h3 style="margin-top:0">Customer pictures</h3><p style="color:var(--mute);font-size:13px;margin-top:0">Customers imported from a CSV or JSON file that has picture web addresses (columns such as photo_url, picture or image) keep the address. Touch Download and the program fetches each picture and saves its own copy in the database. '+t+' customers have an address; '+n+' still need their picture.</p><div class="row"><button class="btn pri" id="pf1">Download missing pictures</button><button class="btn" id="pf2">Download all again</button><label class="btn" style="display:inline-flex;align-items:center;cursor:pointer;margin:0">Import pictures from a folder<input type="file" id="pff" webkitdirectory multiple accept="image/*" style="display:none"></label></div><p style="color:var(--mute);font-size:13px">Some sites do not allow other programs to copy their pictures. For those, use Start menu, Touch POS Fetch Pictures to download them into a folder, then import that folder here. Name files after the customer id, email or full name.</p></div>'}
+  return'<div class="box" style="max-width:720px"><h3 style="margin-top:0">Customer pictures</h3><p style="color:var(--mute);font-size:13px;margin-top:0">Customers imported from a CSV or JSON file that has picture web addresses (columns such as photo_url, picture or image) keep the address. Pictures are downloaded automatically after an import, and each one is saved in the customer database. Use these buttons to try again. '+t+' customers have an address; '+n+' still need their picture.</p><div class="row"><button class="btn pri" id="pf1">Download missing pictures</button><button class="btn" id="pf2">Download all again</button><label class="btn" style="display:inline-flex;align-items:center;cursor:pointer;margin:0">Import pictures from a folder<input type="file" id="pff" webkitdirectory multiple accept="image/*" style="display:none"></label></div><p style="color:var(--mute);font-size:13px">If a picture still fails, use Start menu, Touch POS Fetch Pictures to download them into a folder, then import that folder here. Name files after the customer id, email or full name.</p>'+dbInfo()+'</div>'}
 function wirePics(){$('pf1').onclick=function(){fetchPics(false)};$('pf2').onclick=function(){fetchPics(true)};$('pff').onchange=function(ev){folderPics([].slice.call(ev.target.files));ev.target.value=''}}
 /* ===== permanent deletion (administrator + override code) ===== */
 function needCode(fn){if(!S.set.ovrH){toast('Set an override code in Admin, Settings first.');return}codePad('Override code to confirm',function(code){if(hp(code,'ovr')===S.set.ovrH)fn();else toast('Wrong override code')})}
@@ -749,7 +787,7 @@ function dangerBox(){return'<div class="box" style="max-width:720px;border-color
 function wireDanger(){document.querySelectorAll('[data-dz]').forEach(function(b){b.onclick=function(){var k=b.dataset.dz,msg={sales:'Permanently delete ALL sales records?',hist:'Permanently delete ALL historic (deleted) products?',cust:'Permanently delete ALL customers and their photos?',all:'ERASE EVERYTHING (products, customers, sales, staff and settings)? The program will restart and ask you to set up again.'}[k];
   ask(msg,'Continue',function(){needCode(function(){
     if(k==='sales'){S.sales=[]}else if(k==='hist'){S.products=S.products.filter(function(p){return!p.deleted})}else if(k==='cust'){S.customers=[];cur=null}
-    else{try{localStorage.clear()}catch(e){}location.reload();return}
+    else{try{if(window.posStore)posStore.clear()}catch(e){}try{localStorage.clear()}catch(e){}location.reload();return}
     save();render();toast('Deleted permanently')})})}})}
 
 /* ===== v1.3: dialogs, keyboard shortcuts, zoom, on-screen keyboard, pads, lock ===== */
@@ -1102,4 +1140,5 @@ $('scanbtn').onclick=function(){if(!window.BarcodeDetector||!navigator.mediaDevi
 $('nfcbtn').onclick=function(){if(!window.NDEFReader){toast('Web NFC unavailable on PC browsers - use a USB NFC reader that types the code');return}
   var r=new NDEFReader();r.scan().then(function(){toast('Hold tag to reader');r.onreading=function(e){e.message.records.forEach(function(x){if(x.recordType==='text')found(new TextDecoder(x.encoding||'utf-8').decode(x.data))})}},function(e){toast('NFC: '+e.message)})};
 render();
+if(window.TPDB_DOWN&&!DISP)setTimeout(function(){alert('The Touch POS database is not running, so changes made now will not be saved to it. Close this window and start Touch POS from its shortcut.')},300);
 </script></body></html>

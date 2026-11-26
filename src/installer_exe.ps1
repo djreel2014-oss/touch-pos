@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.IO.Compression
 $self = $env:TPSELF
-$ver = '1.3.0'
+$ver = '1.4.1'
 $pf = $env:ProgramW6432
 if (-not $pf) { $pf = $env:ProgramFiles }
 $dir = Join-Path $pf 'Touch POS'
@@ -71,6 +71,7 @@ if ($ask -ne 'OK') { Write-Host '  Cancelled.'; exit 0 }
 
 try {
   Write-Host '  [1/5] Copying program files...'
+  try { $hk = [IO.File]::ReadAllText((Join-Path $env:ProgramData 'TouchPOS\helper.key')).Trim(); (New-Object Net.WebClient).DownloadString('http://127.0.0.1:47615/quit?k=' + $hk) | Out-Null; Start-Sleep -Milliseconds 500 } catch { }
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   $text = [System.Text.Encoding]::GetEncoding(28591).GetString([IO.File]::ReadAllBytes($self))
   $m1 = '##PAY' + 'LOAD'
