@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.IO.Compression
 $self = $env:TPSELF
-$ver = '1.4.1'
+$ver = '1.5.0'
 $pf = $env:ProgramW6432
 if (-not $pf) { $pf = $env:ProgramFiles }
 $dir = Join-Path $pf 'Touch POS'

@@ -5,7 +5,7 @@
 $ErrorActionPreference = 'Stop'
 $port = 47615
 if ($env:TP_PORT) { $port = [int]$env:TP_PORT }  # only for testing; the app always uses 47615
-$helperVersion = '1.4.1'
+$helperVersion = '1.5.0'
 
 $dataDir = $env:TP_DATA
 if (-not $dataDir) { $dataDir = Join-Path $env:ProgramData 'TouchPOS' }

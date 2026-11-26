@@ -9,7 +9,7 @@ Run src\Start-TouchPOS.cmd. Add the word kiosk after it for full screen. If Touc
 It asks you to create the first administrator: your name, an optional email, and a PIN of 4 to 8 digits. Add sales staff afterwards in Admin.
 
 ## Install
-Run the newest installer in dist, for example Setup-TouchPOS-1.4.0.cmd. Older versions stay in dist, so you can go back to one. Windows asks for administrator permission. It installs to Program Files\Touch POS for all users and makes desktop and Start menu shortcuts. Running it again offers update, which keeps your data, or uninstall.
+Run the newest installer in dist, for example Setup-TouchPOS-1.5.0.cmd. Older versions stay in dist, so you can go back to one. Windows asks for administrator permission. It installs to Program Files\Touch POS for all users and makes desktop and Start menu shortcuts. Running it again offers update, which keeps your data, or uninstall.
 
 ## Build the installer
 After changing anything in src, rebuild the installer:
@@ -23,6 +23,10 @@ The full guide is in src\README.txt. The list of every feature is in docs\featur
 All data is kept in a SQLite database, touchpos.db, in C:\ProgramData\TouchPOS (or src\Data when testing without installing). A hidden helper looks after it and starts with Touch POS, so always start Touch POS from its shortcut or Start-TouchPOS.cmd. Opening index.html directly shows a warning that the database is not running.
 
 To import customers: administrator area, Import and export, Choose file, then pick a .csv or .json list and choose Merge or Replace. Picture web addresses in the file (columns such as photo_url, picture or image) download straight away and are stored in the database. The Customer pictures box shows how many customers have a stored picture, and has buttons to retry. If something goes wrong, the helper writes helper.log next to the database.
+
+## Selecting and deleting several products
+Admin, Stock and forecast: tick the box beside each product, or the box at the top of the list to select all (it follows the current search and category). Then use Move selected or Delete selected. Deleted products go to Historic products.
+Admin, Historic products: tick products, or Select all, then Restore selected or Delete selected forever. Deleting forever asks once and needs the override code once for the whole selection.
 
 ## Where files go
 Receipts, backups and exports are saved to C:\ProgramData\TouchPOS\Files unless changed in Settings, under Where to save files.

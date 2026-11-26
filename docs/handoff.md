@@ -54,8 +54,15 @@ Not tested: a real window, a real install over 1.3.0, and NVDA. Saves are synchr
 - index.html defines the function autoBackup twice (around lines 747 and 1089). The second one wins and is the newer version using saveBlob, so the first is dead code.
 
 ## Next
-- DJ tests 1.4.1: run dist\Setup-TouchPOS-1.4.1.cmd to update, then import the club list. Check that the 30 members marked as requiring supervision (probationary, no Shoot unaccompanied sign-off) is right.
-- Commit and tag v1.4.1 once DJ approves (1.4.0 was never committed) (v1.3.1 for the icon and installer builder was never committed; it is included in 1.4.0).
+- DJ tests 1.5.0: run dist\Setup-TouchPOS-1.5.0.cmd to update, then import the club list. Check that the 30 members marked as requiring supervision (probationary, no Shoot unaccompanied sign-off) is right.
+- v1.4.1 committed and pushed 2026-11-26 (1.4.0 was never committed on its own) (v1.3.1 for the icon and installer builder was never committed; it is included in 1.4.0).
+
+## Version 1.5.0: batch product selection (2026-11-26)
+- DJ asked for batch selection and deletion of products. Stock and forecast already had tick boxes, Select all, Move selected and Delete selected (administrators only, products move to Historic products).
+- Added the same to Historic products: tick boxes on each card, Select all, Restore selected, and Delete selected forever. New purgeProds(ids) asks once, then needs the override code once; it also clears pack links (src) to the removed products. The single Delete forever button uses it too, so it now also asks before the code.
+- Tested in hidden Edge with test products: select, restore, select all, delete forever of 2, pack link cleared.
+- Note: index.html's committed copy has one lone CR, so git treats it as binary (-text). Never run sed -i on it; edit with Python using newline='' or the diff becomes the whole file.
+- Committed and pushed as v1.5.0 on 2026-11-26. Installer: dist\Setup-TouchPOS-1.5.0.cmd.
 
 ## Installers kept per version (2026-11-26)
 - DJ noticed the 1.4.0 build had overwritten the 1.3.0 installer (dist is not in git). Build-Setup.ps1 now names each installer by version.

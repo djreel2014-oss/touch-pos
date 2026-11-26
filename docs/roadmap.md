@@ -6,6 +6,7 @@
 
 - 1.4.0: SQLite database for customers and all other data, customer import with automatic picture downloads, through a hidden helper.
 - 1.4.1: customer import reads real member lists (first and last name, Photo URL, member numbers, sign-off dates, other separators and encodings).
+- 1.5.0: batch selection in Historic products (restore selected, delete selected forever with one override code), alongside the existing batch delete on Stock and forecast.
 
 ## Next
 - DJ's test run, then fix what comes up.

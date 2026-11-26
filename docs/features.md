@@ -32,6 +32,7 @@ Written 2026-11-26 from the code of version 1.3.0, because the original chat was
 - Stock forecast based on opening hours and an opening calendar.
 - Stock alert emails to the manager.
 - Deleted products move to Historic products and stay on past receipts.
+- Select several products at once (one by one or select all) to move them to a category or delete them. In Historic products, select several to restore them or delete them forever with one override code.
 
 ## Sales, receipts and reports
 - Every transaction gets its own numbered receipt, saved automatically as a PDF.

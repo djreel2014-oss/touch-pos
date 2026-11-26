@@ -1,10 +1,10 @@
-TOUCH POS FOR WINDOWS  (version 1.4.1)
+TOUCH POS FOR WINDOWS  (version 1.5.0)
 ======================================
 Needs nothing except Windows 10 or 11 (32-bit or 64-bit). Opens in its own window using the
 Microsoft Edge engine that is part of Windows. Works without internet (except downloading
 customer pictures from web addresses).
 
-INSTALL / UPDATE: run Setup-TouchPOS-1.4.1.cmd. Running Setup again offers update or uninstall.
+INSTALL / UPDATE: run Setup-TouchPOS-1.5.0.cmd. Running Setup again offers update or uninstall.
 Updating keeps all your data.
 
 SELLING PAGE
@@ -23,6 +23,12 @@ SCREEN
   the main action. The till locks after the idle time set in Settings: unlock with your PIN
   (no OK needed) or your QR / NFC credential. Forgot PIN emails an administrator, who can issue a
   temporary PIN (Staff and credentials > Temp PIN).
+
+PRODUCTS: SELECTING SEVERAL AT ONCE
+  Admin > Stock and forecast: tick products (or Select all) to Move selected to a category or
+  Delete selected. Deleted products go to Historic products and stay on past receipts.
+  Admin > Historic products: tick products (or Select all) to Restore selected, or Delete
+  selected forever (asks once, then the override code once for the whole selection).
 
 TWO MONITORS
   Settings > Monitors > Detect monitors: choose which monitor Touch POS opens on and which one the
